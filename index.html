@@ -281,7 +281,7 @@
       z-index: 5;
     }
 
-    #backgroundToggle {
+    #backgroundToggle, #foregroundToggle {
       margin: 0;
       padding: 5px 10px;
       font-size: 12px;
@@ -347,18 +347,71 @@
       color: #fff;
     }
 
+    /* Full-screen, GUI-free song selection mode. */
+    #foregroundScreen {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      overflow-y: auto;
+      background: #000;
+      color: #fff;
+      padding: 8vh 8vw;
+    }
+
+    #foregroundScreen.active { display: block; }
+
+    #foregroundTrackList {
+      list-style: none;
+      margin: 0 auto;
+      padding: 0;
+      max-width: 680px;
+    }
+
+    #foregroundTrackList li { margin: 0; padding: 0; }
+
+    #foregroundTrackList button {
+      display: block;
+      width: 100%;
+      margin: 0;
+      padding: 12px 0;
+      border: 0;
+      border-bottom: 1px solid #222;
+      border-radius: 0;
+      background: transparent;
+      color: #eee;
+      text-align: left;
+      font-size: 16px;
+      overflow-wrap: anywhere;
+    }
+
+    #foregroundTrackList button:hover { background: #111; color: #fff; }
+
+    #foregroundStatus {
+      max-width: 680px;
+      margin: 0 auto 12px;
+      color: #777;
+      font-size: 12px;
+    }
+
   </style>
 </head>
 <body>
 <div class="app">
   <div class="background-audio">
     <button id="backgroundToggle" type="button" aria-expanded="false">Background</button>
+    <button id="foregroundToggle" type="button">Foreground</button>
     <div id="backgroundPanel">
       <p id="backgroundStatus">Open to load audio tracks.</p>
       <ul id="backgroundTrackList"></ul>
     </div>
   </div>
   <audio id="backgroundAudio" preload="none"></audio>
+
+  <div id="foregroundScreen" aria-label="Song list">
+    <p id="foregroundStatus">Loading songs…</p>
+    <ul id="foregroundTrackList"></ul>
+  </div>
 
   <h1>Question Timer</h1>
   <div class="hint">
@@ -733,7 +786,12 @@
   const backgroundPanel = document.getElementById('backgroundPanel');
   const backgroundStatus = document.getElementById('backgroundStatus');
   const backgroundTrackList = document.getElementById('backgroundTrackList');
+  const foregroundToggle = document.getElementById('foregroundToggle');
+  const foregroundScreen = document.getElementById('foregroundScreen');
+  const foregroundStatus = document.getElementById('foregroundStatus');
+  const foregroundTrackList = document.getElementById('foregroundTrackList');
   const backgroundAudio = document.getElementById('backgroundAudio');
+  backgroundAudio.loop = true; // Keep the selected track repeating until another track is chosen.
 
   let backgroundTracksLoaded = false;
 
@@ -782,9 +840,30 @@
     return files;
   }
 
+  function createTrackButton(track) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = track.name;
+    button.title = `Play ${track.name}`;
+    button.addEventListener('click', async () => {
+      backgroundAudio.src = track.url;
+      try {
+        await backgroundAudio.play();
+        backgroundStatus.textContent = `Playing: ${track.name}`;
+        foregroundStatus.textContent = `Playing: ${track.name}`;
+      } catch (error) {
+        backgroundStatus.textContent = 'Playback could not start. Click the track again.';
+        foregroundStatus.textContent = 'Playback could not start. Select the song again.';
+      }
+    });
+    return button;
+  }
+
   async function loadBackgroundTracks() {
     backgroundStatus.textContent = 'Loading tracks…';
+    foregroundStatus.textContent = 'Loading songs…';
     backgroundTrackList.replaceChildren();
+    foregroundTrackList.replaceChildren();
 
     try {
       const tracks = await getMp3Files(AUDIO_FOLDER);
@@ -792,33 +871,27 @@
 
       if (!tracks.length) {
         backgroundStatus.textContent = 'No MP3 files found in the audio folder.';
+        foregroundStatus.textContent = 'No songs found.';
         backgroundTracksLoaded = true;
         return;
       }
 
       for (const track of tracks) {
-        const li = document.createElement('li');
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.textContent = track.name;
-        button.title = `Play ${track.name}`;
-        button.addEventListener('click', async () => {
-          backgroundAudio.src = track.url;
-          try {
-            await backgroundAudio.play();
-            backgroundStatus.textContent = `Playing: ${track.name}`;
-          } catch (error) {
-            backgroundStatus.textContent = 'Playback could not start. Click the track again.';
-          }
-        });
-        li.appendChild(button);
-        backgroundTrackList.appendChild(li);
+        const backgroundItem = document.createElement('li');
+        backgroundItem.appendChild(createTrackButton(track));
+        backgroundTrackList.appendChild(backgroundItem);
+
+        const foregroundItem = document.createElement('li');
+        foregroundItem.appendChild(createTrackButton(track));
+        foregroundTrackList.appendChild(foregroundItem);
       }
 
       backgroundStatus.textContent = `${tracks.length} track${tracks.length === 1 ? '' : 's'}`;
+      foregroundStatus.textContent = `${tracks.length} song${tracks.length === 1 ? '' : 's'}`;
       backgroundTracksLoaded = true;
     } catch (error) {
       backgroundStatus.textContent = error.message;
+      foregroundStatus.textContent = error.message;
     }
   }
 
@@ -835,6 +908,20 @@
     if (!event.target.closest('.background-audio')) {
       backgroundPanel.classList.remove('open');
       backgroundToggle.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  foregroundToggle.addEventListener('click', () => {
+    foregroundScreen.classList.add('active');
+    document.body.style.overflow = 'hidden';
+    if (!backgroundTracksLoaded) loadBackgroundTracks();
+  });
+
+  // Escape returns to the timer; the foreground screen itself has no visible GUI.
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && foregroundScreen.classList.contains('active')) {
+      foregroundScreen.classList.remove('active');
+      document.body.style.overflow = '';
     }
   });
 </script>
